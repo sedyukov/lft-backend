@@ -142,18 +142,6 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 
 		m.parseRewardReferralEvent(eventsIterator)
 	}
-
-	// eg := new(errgroup.Group)
-	// eg.Go(func() error {
-	// 	return m.watchRewardReferralEvent(ctx, contract)
-	// })
-	// eg.Go(func() error {
-	// 	return m.watchOwnershipTransferred(ctx, contract)
-	// })
-	// if err = eg.Wait(); err != nil {
-	// 	logger.Error().Msg("Events error group throw error")
-	// 	return err
-	// }
 	return nil
 }
 
