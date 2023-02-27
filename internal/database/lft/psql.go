@@ -1,4 +1,4 @@
-package parser
+package lftdb
 
 import (
 	"database/sql"
