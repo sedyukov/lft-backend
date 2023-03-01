@@ -9,10 +9,18 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/rs/zerolog"
 	contracts "github.com/sedyukov/lft-backend/contracts/interfaces"
+	lftcontrollers "github.com/sedyukov/lft-backend/internal/controllers/lft"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	TxReceiptsBatchSize = 16
+	RequestTimeout      = 32 * time.Second
+	RequestRetryDelay   = 32 * time.Millisecond
 )
 
 // Monitor interface
@@ -23,16 +31,18 @@ type Monitor interface {
 
 type monitor struct {
 	contractAddress string
+	client          ethclient.Client
+	logger          zerolog.Logger
 }
 
 // AllowanceChangedEvent struct
-type RewardReferralEvent struct {
-	Trader      string   `json:"trader"`
-	Refferal    string   `json:"refferal"`
-	Level       uint8    `json:"level"`
-	Amount      *big.Int `json:"amount"`
-	BlockNumber uint64   `json:"block_number"`
-}
+// type RewardReferralEvent struct {
+// 	Trader      string   `json:"trader"`
+// 	Refferal    string   `json:"refferal"`
+// 	Level       uint8    `json:"level"`
+// 	Amount      *big.Int `json:"amount"`
+// 	BlockNumber uint64   `json:"block_number"`
+// }
 
 // OwnershipTransferredEvent struct
 type OwnershipTransferredEvent struct {
@@ -52,6 +62,8 @@ func NewMonitor(contractAddress string, logger zerolog.Logger) Monitor {
 
 // Start register to listen blockchain events
 func (m *monitor) Start(ctx context.Context, client *ethclient.Client, logger zerolog.Logger) error {
+	m.client = *client
+	m.logger = logger
 	logger.Info().Msgf("Start monitoring at %s", m.contractAddress)
 
 	err := validateContractAddress(ctx, client, m.contractAddress)
@@ -84,6 +96,9 @@ func (m *monitor) Start(ctx context.Context, client *ethclient.Client, logger ze
 func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger zerolog.Logger) error {
 	logger.Info().Msgf("Start monitoring at %s", m.contractAddress)
 
+	m.client = *client
+	m.logger = logger
+
 	err := validateContractAddress(ctx, client, m.contractAddress)
 	if err != nil {
 		logger.Error().Msg("Contract address validation failed")
@@ -100,7 +115,6 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 	logger.Info().Msg("Contract instance created successfully")
 
 	// TODO: implement logic for block start
-	blockStart := uint64(27262097)
 	header, err := client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		logger.Error().Msg("Failed when retrieving last block")
@@ -108,6 +122,7 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 	}
 
 	currentBlock := header.Number.Uint64()
+	blockStart := uint64(currentBlock)
 
 	if blockStart < currentBlock {
 		// query := ethereum.FilterQuery{
@@ -142,6 +157,56 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 
 		m.parseRewardReferralEvent(eventsIterator)
 	}
+	for i := currentBlock; true; i++ {
+		block := m.fetchBlock(int64(i))
+
+		if block == nil {
+			return nil
+		}
+
+		endBlock := currentBlock + 1
+		logger.Info().Uint64("endBlock", endBlock)
+		query := &bind.FilterOpts{
+			Start: i,
+			End:   &i,
+		}
+
+		eventsIterator, err := contract.FilterRewardReferral(query, nil, nil, nil)
+		if err != nil {
+			logger.Error().Msg("Get FilterRewardReferral failed")
+			return err
+		}
+		m.parseRewardReferralEvent(eventsIterator)
+	}
+
+	return nil
+}
+
+func (m *monitor) fetchBlock(height int64) *types.Header {
+	// Request until get block
+	for first, start, deadline := true, time.Now(), time.Now().Add(RequestTimeout); true; first = false {
+		// Request block
+		result, err := m.client.HeaderByNumber(context.Background(), new(big.Int).SetInt64(height))
+		if err == nil {
+			if !first {
+				m.logger.Info().Msgf(
+					fmt.Sprintf("Fetched block (after %s), height %d", DurationToString(time.Since(start)), height),
+				)
+			} else {
+				m.logger.Info().Msgf(
+					fmt.Sprintf("Fetched block (%s), height %d", DurationToString(time.Since(start)), height),
+				)
+			}
+			return result
+		}
+		// Stop trying when the deadline is reached
+		if time.Now().After(deadline) {
+			return nil
+		}
+		// Sleep some time before next try
+		time.Sleep(RequestRetryDelay)
+	}
+
 	return nil
 }
 
@@ -165,7 +230,7 @@ func (m *monitor) watchRewardReferralEvent(ctx context.Context, contract *contra
 			return errChan
 		case event := <-events:
 			j, _ := json.MarshalIndent(
-				RewardReferralEvent{
+				lftcontrollers.RewardReferralEvent{
 					Trader:      event.Trader.Hex(),
 					Refferal:    event.Referral.Hex(),
 					Level:       event.Level,
@@ -218,18 +283,14 @@ func (m *monitor) watchOwnershipTransferred(ctx context.Context, contract *contr
 func (m *monitor) parseRewardReferralEvent(eventsIterator *contracts.ContractRewardReferralIterator) error {
 	for eventsIterator.Next() {
 		event := eventsIterator.Event
-		j, _ := json.MarshalIndent(
-			RewardReferralEvent{
-				Trader:      event.Trader.Hex(),
-				Refferal:    event.Referral.Hex(),
-				Level:       event.Level,
-				Amount:      event.Amount,
-				BlockNumber: event.Raw.BlockNumber,
-			},
-			"",
-			"  ",
-		)
-		fmt.Println(string(j))
+		rre := lftcontrollers.RewardReferralEvent{
+			Trader:      event.Trader.Hex(),
+			Refferal:    event.Referral.Hex(),
+			Level:       event.Level,
+			Amount:      event.Amount,
+			BlockNumber: event.Raw.BlockNumber,
+		}
+		lftcontrollers.CreateRewardRefferal(rre)
 	}
 
 	if eventsIterator.Error() != nil {

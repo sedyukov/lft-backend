@@ -76,7 +76,7 @@ func establishRpcMonitoring(logger zerolog.Logger) {
 	)
 
 	// Init client
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 	client, err := ethclient.DialContext(ctx, rpcEndpoint)
 	if err != nil {
 		logger.Error().Msg("Connection failed to: " + rpcEndpoint)
@@ -89,7 +89,6 @@ func establishRpcMonitoring(logger zerolog.Logger) {
 		panic(err)
 	}
 	logger.Info().Msg(nId.String())
-	defer cancel()
 	logger.Info().Msg("Client init sucessfully")
 
 	// Start monitoring

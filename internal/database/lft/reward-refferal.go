@@ -8,9 +8,28 @@ type RewardReferral struct {
 	gorm.Model
 	Trader      string `json:"trader"`
 	Refferal    string `json:"refferal"`
-	Level       string `json:"level"`
+	Level       uint8  `json:"level"`
 	Amount      string `json:"amount"`
-	BlockHeight int64  `json:"block_height"`
+	BlockNumber uint64 `json:"block_number"`
+}
+
+type RewardSumResult struct {
+	sum string
+}
+
+func GetSumRewardsByRefAddress(refferal string) string {
+	db := DBInstance.con
+	var sum string
+	sql := "select sum(amount::numeric) from reward_referrals rr where refferal = ?"
+	db.Raw(sql, refferal).Scan(&sum)
+	return sum
+}
+
+func GetRewardReferral(id string) RewardReferral {
+	db := DBInstance.con
+	var rr RewardReferral
+	db.First(&rr, id)
+	return rr
 }
 
 func GetAllRewardReferral() []RewardReferral {
@@ -20,9 +39,7 @@ func GetAllRewardReferral() []RewardReferral {
 	return rrs
 }
 
-func GetRewardReferral(id string) RewardReferral {
+func CreateRewardRefferal(rr RewardReferral) {
 	db := DBInstance.con
-	var rr RewardReferral
-	db.First(&rr, id)
-	return rr
+	db.Create(&rr)
 }
