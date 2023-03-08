@@ -32,6 +32,7 @@ func InitDatabase(logger zerolog.Logger, autoMigrate bool) error {
 			&Stake{},
 			&Transfer{},
 			&Unstake{},
+			&Counter{},
 		)
 		if err != nil {
 			return err

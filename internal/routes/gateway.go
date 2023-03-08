@@ -19,6 +19,7 @@ func SetupGatewayRoutes(app *fiber.App) {
 	app.Get("/api/v1/reward-refferal", lftcontrollers.GetAllRewardReferral)
 	app.Get("/api/v1/reward-refferal/:id", lftcontrollers.GetRewardReferral)
 	app.Get("/api/v1/rewards-sum/ref/:address", lftcontrollers.GetSumRewardsByRefAddress)
+	app.Get("/api/v1/rewards-sum-levels/ref/:address", lftcontrollers.GetSumRewardsByRefAddressWithLevels)
 
 	// reward stakers
 	app.Get("/api/v1/reward-stakers", lftcontrollers.GetAllRewardStakers)

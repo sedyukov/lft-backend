@@ -15,9 +15,15 @@ type RewardReferralEvent struct {
 	Amount      *big.Int `json:"amount"`
 	BlockNumber uint64   `json:"block_number"`
 }
+
 type RewardRefferalSumResponse struct {
 	Referral string `json:"refferal"`
 	Sum      string `json:"amount"`
+}
+
+type RewardsRefferalSumWithLevelsResponse struct {
+	Referral string                        `json:"refferal"`
+	Rewards  []lftdb.RewardSumLevelsResult `json:"rewards"`
 }
 
 func GetAllRewardReferral(c *fiber.Ctx) error {
@@ -33,6 +39,19 @@ func GetSumRewardsByRefAddress(c *fiber.Ctx) error {
 	res := RewardRefferalSumResponse{
 		Referral: address,
 		Sum:      sum,
+	}
+
+	c.JSON(res)
+	return nil
+}
+
+func GetSumRewardsByRefAddressWithLevels(c *fiber.Ctx) error {
+	address := c.Params("address")
+	dbRes := lftdb.GetSumRewardsByRefAddressAndLevels(address)
+
+	res := RewardsRefferalSumWithLevelsResponse{
+		Referral: address,
+		Rewards:  dbRes,
 	}
 
 	c.JSON(res)

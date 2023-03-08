@@ -17,12 +17,26 @@ type RewardSumResult struct {
 	sum string
 }
 
+type RewardSumLevelsResult struct {
+	Sum   string `json:"sum"`
+	Level uint8  `json:"level"`
+	Count uint64 `json:"count"`
+}
+
 func GetSumRewardsByRefAddress(refferal string) string {
 	db := DBInstance.con
 	var sum string
 	sql := "select sum(amount::numeric) from reward_referrals rr where refferal = ?"
 	db.Raw(sql, refferal).Scan(&sum)
 	return sum
+}
+
+func GetSumRewardsByRefAddressAndLevels(refferal string) []RewardSumLevelsResult {
+	db := DBInstance.con
+	var res []RewardSumLevelsResult
+	sql := "select level, sum(amount::numeric), count(amount) from reward_referrals rr where refferal = ? group by level"
+	db.Raw(sql, refferal).Scan(&res)
+	return res
 }
 
 func GetRewardReferral(id string) RewardReferral {

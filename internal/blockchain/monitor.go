@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -14,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	contracts "github.com/sedyukov/lft-backend/contracts/interfaces"
 	lftcontrollers "github.com/sedyukov/lft-backend/internal/controllers/lft"
+	lftdb "github.com/sedyukov/lft-backend/internal/database/lft"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,6 +23,7 @@ const (
 	TxReceiptsBatchSize = 16
 	RequestTimeout      = 32 * time.Second
 	RequestRetryDelay   = 32 * time.Millisecond
+	historyBlockBatch   = 1000
 )
 
 // Monitor interface
@@ -78,7 +81,6 @@ func (m *monitor) Start(ctx context.Context, client *ethclient.Client, logger ze
 		return err
 	}
 	logger.Info().Msg("Contract instance created successfully")
-
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
 		return m.watchRewardReferralEvent(ctx, contract)
@@ -114,49 +116,48 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 	}
 	logger.Info().Msg("Contract instance created successfully")
 
-	// TODO: implement logic for block start
 	header, err := client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		logger.Error().Msg("Failed when retrieving last block")
 		return err
 	}
-
 	currentBlock := header.Number.Uint64()
-	blockStart := uint64(currentBlock)
+
+	lastBlockFromDb, err := strconv.ParseInt(lftdb.GetLastBlock(), 0, 64)
+	if err != nil {
+		logger.Error().Msg("Failed when trying to convert last parsed block to int")
+		return err
+	}
+	blockStart := uint64(lastBlockFromDb)
 
 	if blockStart < currentBlock {
-		// query := ethereum.FilterQuery{
-		// 	FromBlock: big.NewInt(blockStart),
-		// 	ToBlock:   big.NewInt(2394201),
-		// 	Addresses: []common.Address{
-		// 		hexedAddress,
-		// 	},
-		// }
+		for i := blockStart; i < currentBlock; i += historyBlockBatch {
+			currentBlockEnd := i + historyBlockBatch - 1
 
-		// check max range
-		currentBlock = 27266647
-		if currentBlock-blockStart > 5000 {
-			blockStart = currentBlock - 5000
+			if currentBlockEnd >= currentBlock {
+				currentBlockEnd = currentBlock - 1
+			}
+
+			query := &bind.FilterOpts{
+				Start: i,
+				End:   &currentBlockEnd,
+			}
+
+			eventsIterator, err := contract.FilterRewardReferral(query, nil, nil, nil)
+			if err != nil {
+				logger.Error().Msg("Get FilterRewardReferral failed")
+				return err
+			}
+
+			m.logger.Info().Msgf(
+				fmt.Sprintf("Fetched batch from %d to %d", i, currentBlockEnd),
+			)
+
+			m.parseRewardReferralEvent(eventsIterator)
+			lftdb.UpdateLastBlock(strconv.FormatUint(currentBlockEnd, 10))
 		}
-		fmt.Println(currentBlock) // 5671744
-
-		query := &bind.FilterOpts{
-			Start: blockStart,
-			End:   &currentBlock,
-		}
-		// logs, err := client.FilterLogs(context.Background(), query)
-		// if err != nil {
-		// 	return err
-		// }
-
-		eventsIterator, err := contract.FilterRewardReferral(query, nil, nil, nil)
-		if err != nil {
-			logger.Error().Msg("Get FilterRewardReferral failed")
-			return err
-		}
-
-		m.parseRewardReferralEvent(eventsIterator)
 	}
+
 	for i := currentBlock; true; i++ {
 		block := m.fetchBlock(int64(i))
 
@@ -176,7 +177,9 @@ func (m *monitor) StartRpc(ctx context.Context, client *ethclient.Client, logger
 			logger.Error().Msg("Get FilterRewardReferral failed")
 			return err
 		}
+
 		m.parseRewardReferralEvent(eventsIterator)
+		lftdb.UpdateLastBlock(strconv.FormatUint(i, 10))
 	}
 
 	return nil

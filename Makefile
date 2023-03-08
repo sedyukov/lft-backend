@@ -9,5 +9,16 @@ start-gateway:
 lint:
 	golangci-lint run
 
-deploy:
-	(go build cmd/sync/main.go && scp main user@192.168.0.1:~/lft-backend)
+deploy-parser:
+#	(go build ./cmd/parser && scp main user@192.168.0.1:~/lft-backend)
+	(go build ./cmd/parser)
+
+deploy-gateway:
+#	(go build ./cmd/parser && scp main user@192.168.0.1:~/lft-backend)
+	(go build ./cmd/gateway)
+
+deploy-parser-env:
+	scp ./cmd/parser/.env user@192.168.0.1:~/lft-backend
+
+deploy-gateway-env:
+	scp ./cmd/gateway/.env user@192.168.0.1:~/lft-backend
