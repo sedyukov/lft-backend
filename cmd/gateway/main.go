@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/spf13/viper"
 
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	lftdb "github.com/sedyukov/lft-backend/internal/database/lft"
 	"github.com/sedyukov/lft-backend/internal/routes"
 	"github.com/sedyukov/lft-backend/internal/service"
@@ -24,7 +25,9 @@ func main() {
 		panic(err)
 	}
 	logger.Info().Msg("Logger sucessfully started for gateway")
+
 	app := fiber.New()
+	app.Use(cors.New())
 
 	// Initialize database without migration
 	var migrateDatabase = false
